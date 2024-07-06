@@ -1,0 +1,186 @@
+local Debris = game:GetService("Debris")
+
+local renv = getrenv()
+local Realshared = renv.shared
+
+local raceColliders = workspace["$raceColliders"]
+local Placeables = workspace["%Placeables"]
+
+local player = Realshared.player
+
+local races = Realshared.asset("/races")
+
+local Go = Realshared.remote("/races/Go")
+local SignalInterest = Realshared.remote("/races/SignalInterest")
+local StartRace = Realshared.remote("/races/StartRace")
+
+local CarTracker = select(2, pcall(Realshared.import, "/pcar/CarTracker"))
+local ClientCarState = select(2, pcall(Realshared.import, "/pcar/ClientCarState"))
+
+local ClientRaceState = select(2, pcall(Realshared.import, "/prace/ClientRaceState.client"))
+
+local BindableEvent = Instance.new("BindableEvent")
+
+local function PlaceablesChildAdded(Child)
+	if Child.Name == "Checkpoint" then
+		local RootPart = Child.RootPart
+
+		local FormerPosition = RootPart.Position
+		repeat
+			if Child.Parent and RootPart.Position ~= FormerPosition then
+				BindableEvent:Fire()
+			end
+			FormerPosition = RootPart.Position
+			task.wait(.1)
+		until not Child.Parent
+		return
+	else
+		return
+	end
+	return
+end
+
+local function PlaceablesChildRemoved()
+	BindableEvent:Fire()
+	return
+end
+
+local function IsraceColliderLoaded(raceId, raceColliderId)
+	return raceColliders[raceId]:FindFirstChild(tostring(raceColliderId)) and true or false
+end
+
+local function LoadraceCollider(raceId, raceColliderId)
+	local CarFromDriver = CarTracker.getCarFromDriver(player)
+
+	local RootPart = CarFromDriver.RootPart
+
+	if not RootPart.Anchored then
+		RootPart.Anchored = true
+	end
+	CarFromDriver:SetPrimaryPartCFrame(races[raceId].Checkpoints[tostring(raceColliderId)].ArrowRefCFrame.Value)
+	raceColliders[raceId]:WaitForChild(tostring(raceColliderId))
+	if RootPart.Anchored then
+		RootPart.Anchored = false
+	end
+	return
+end
+
+local function HitraceCollider(raceId, raceColliderId)
+	CarTracker.getCarFromDriver(player):SetPrimaryPartCFrame(raceColliders[raceId][tostring(raceColliderId)].CFrame)
+	return
+end
+
+local Blacklist = {
+	"CreateRace",
+	"RaceNotifier",
+	"ServerAlert"
+}
+local OldNameCall = nil
+local function hookmetamethodFunction(Self, ...)
+	if table.find(Blacklist, Self.Name) then
+		return
+	end
+	return OldNameCall(Self, ...)
+end
+
+local function StartRaceOnClientEvent(raceId)
+	Go.OnClientEvent:Wait()
+	for Count1 = 1, require(races[raceId].Module).laps do
+		for Count2 = 1, raceColliders:WaitForChild(raceId).NumCheckpoints.Value do
+			if not ClientRaceState.racing then
+				break
+			end
+			if not IsraceColliderLoaded(raceId, Count2) then
+				LoadraceCollider(raceId, Count2)
+			end
+			HitraceCollider(raceId, Count2)
+			BindableEvent.Event:Wait()
+		end
+	end
+	return
+end
+
+local function GetraceQuality(race)
+	local State = race.State
+
+	return State.NumPlayers.Value / State.TimeUntilStart.Value * require(race.Module).startCountdown
+end
+
+local function GetHighestQualityrace()
+	local HighestraceQuality = -math.huge
+	local HighestQualityrace = nil
+	local function foreachi(_, Value)
+		local State = Value.State
+
+		local NumPlayers = State.NumPlayers
+
+		if NumPlayers.Value < table.getn(Value.Places:GetChildren()) and NumPlayers.Value > 0 and not State.RaceActive.Value then
+			local raceQuality = GetraceQuality(Value)
+			if raceQuality > HighestraceQuality then
+				HighestraceQuality = raceQuality
+				HighestQualityrace = Value
+			end
+			return
+		else
+			return
+		end
+		return
+	end
+	table.foreachi(races:GetChildren(), foreachi)
+	if HighestQualityrace then
+		print(HighestQualityrace, HighestQualityrace.State.TimeUntilStart.Value * require(HighestQualityrace.Module).startCountdown)
+	end
+	return HighestQualityrace
+end
+
+local HighestQualityrace = nil
+local FormerHighestQualityrace = nil
+local EndValue = 2500
+local Reverse = false
+local Speed = 100
+local function Update()
+	if ClientCarState.isDriving and not ClientRaceState.racing then
+		for Count = 1, EndValue, 6 do
+			if not ClientCarState.isDriving or ClientRaceState.racing then
+				break
+			end
+			if HighestQualityrace then
+				if HighestQualityrace.State.TimeUntilStart.Value * require(HighestQualityrace.Module).startCountdown <= 1 then
+					SignalInterest:FireServer(HighestQualityrace.Name)
+				end
+				if HighestQualityrace ~= FormerHighestQualityrace then
+					FormerHighestQualityrace = HighestQualityrace
+				end
+			end
+			HighestQualityrace = GetHighestQualityrace()
+			CarTracker.getCarFromDriver(player):SetPrimaryPartCFrame(CFrame.new(0, 0, not Reverse and Count or Reverse and EndValue - Count))
+			task.wait(1 / Speed)
+		end
+		Reverse = not Reverse
+		return
+	else
+		return
+	end
+	return
+end
+
+local function Initialize()
+	if not ClientCarState.isDriving then
+		local Hint = Instance.new("Hint")
+		Hint.Text = "Please, Spawn/Enter Your Car (Before Executing)!"
+		Hint.Parent = workspace
+		Debris:AddItem(Hint, 5)
+		return
+	end
+	Placeables.ChildAdded:Connect(PlaceablesChildAdded)
+	Placeables.ChildRemoved:Connect(PlaceablesChildRemoved)
+	OldNameCall = hookmetamethod(game, "__namecall", hookmetamethodFunction)
+	StartRace.OnClientEvent:Connect(StartRaceOnClientEvent)
+	workspace.Gravity = 0
+	while true do
+		Update()
+		task.wait(.1)
+	end
+	return
+end
+Initialize()

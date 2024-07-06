@@ -1,0 +1,32 @@
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
+local Window = Library.CreateLib("Eg 1.0", "GrapeTheme")
+local Tab = Window:NewTab("Collect")
+local Section = Tab:NewSection("Coins")
+
+local collectables
+for i,v in next,game.Workspace:GetChildren() do
+    if v:IsA("Model") and v.Name == "collectables" then
+        collectables = v
+        break
+    end
+end
+
+
+Section:NewToggle("Auto Collect", "Automatically collects all coins and eggs", function(state)
+    if state then
+        _G.collectMoney = true
+        while _G.collectMoney do
+            local torso = game.Players.LocalPlayer.Character.HumanoidRootPart -- reassign incase player dies
+            for i,v in pairs(collectables:GetDescendants()) do
+                if v.Name == "TouchInterest" and v.Parent then
+                    firetouchinterest(torso, v.Parent, 0)
+                    firetouchinterest(torso, v.Parent, 1)
+                    
+                end
+            end
+            wait(1)
+        end
+    else
+        _G.collectMoney = false
+    end
+end)
